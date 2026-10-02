@@ -11,11 +11,30 @@ O Ninho (painel web de supervisão familiar) tem banco de dados, autenticação 
 ## Constraints
 - Kotlin + Android Studio + SDK atual.
 - Device Owner via provisionamento (não pode ser concedido por instalação manual do APK).
-- Device Owner só pode ser ativado em aparelho sem nenhuma conta já configurada (estado de fábrica/reset). **Decisão de produto confirmada:** o alvo é um aparelho dedicado (comprado/reservado só para ser supervisionado), não o retrofit do celular que a criança já usa no dia a dia — reset de fábrica como pré-requisito é aceitável nesse cenário e mantém a justificativa de usar Device Owner (bloqueio anti-tamper, kiosk). Se no futuro o produto precisar suportar retrofit de aparelho em uso, isso exige reavaliar a arquitetura inteira (Device Owner pode não ser a escolha certa para esse caso).
+- Device Owner só pode ser ativado em aparelho sem nenhuma conta já configurada (estado de fábrica/reset) — restrição do próprio Android, não do nosso design. **Decisão de produto revisada (2026-10-02):** o app precisa suportar os dois cenários — aparelho dedicado (reset aceitável) E celular que a criança já usa no dia a dia (reset inaceitável). Como Device Owner é tecnicamente impossível sem reset, isso significa **dois modos de operação no mesmo app**, detectados/escolhidos no momento do pareamento — ver "Modo A" e "Modo B" logo abaixo. Modo B ainda não tem design técnico detalhado; está sinalizado como trabalho pendente, não como resolvido.
 - Toda captura sensível (câmera/tela/áudio) exige indicador visível do Android e consentimento auditável — sem captura oculta (requisito do usuário, e já formalizado como regra do projeto em `AGENTS.md` do repo Ninho). Consentimento aqui significa: a criança/aparelho supervisionado vê um aviso não dispensável durante a captura (não é um gate de aprovar/negar, que contradiria a própria natureza de supervisão); o evento é sempre registrado em `command_consent_events` como notificação auditável, mesmo quando a captura já estava autorizada no momento do pareamento. **Exceção conhecida: gravação de tela.** O Android não permite que nem um Device Owner conceda `MediaProjection` silenciosamente — `createScreenCaptureIntent()` sempre exibe um diálogo do sistema operacional (fora do controle do app) a cada execução, inclusive em versões recentes do Android a cada reinício do app. Para este comando especificamente, o próprio diálogo do SO já cumpre (e excede) o requisito de consentimento visível — não é uma violação do princípio "sem gate de aprovar/negar", é uma restrição de plataforma que se sobrepõe. Isso precisa estar documentado como exceção explícita, não escondido. **Caminho de recusa:** se a criança tocar em "Cancelar" nesse diálogo, o app marca o `device_command` correspondente como `denied` (valor já existente no enum `device_command_status`) via `update-command-status` — o responsável vê no painel que a gravação foi recusada, em vez de a supervisão falhar silenciosamente sem nenhum retorno.
 - Mesmo contrato de dados que o simulador web já usa (`devices`, `device_commands`, `device_telemetry`, `command_consent_events`) — não é para inventar um schema paralelo.
 - Distribuição: APK assinado para testes agora; AAB/Play gerenciado ou distribuição empresarial depois.
 - Fabricantes como Xiaomi/Huawei/Samsung/Oppo matam foreground services e atrasam push FCM por padrão a menos que o usuário libere manualmente o app nas configurações de otimização de bateria do fabricante. Isso ameaça diretamente os critérios de sucesso de persistência/telemetria e precisa de um passo de onboarding dedicado (ver módulo `onboarding`).
+
+## Modos de Operação (decisão de escopo, 2026-10-02)
+
+O app precisa cobrir dois cenários de aparelho, que exigem APIs Android completamente diferentes:
+
+### Modo A: Aparelho dedicado — Device Owner (DESENHADO — é o que está em progresso)
+- Ativado via provisionamento QR num aparelho zerado/recém-resetado.
+- Controle forte: `DevicePolicyManager` completo, `addUserRestriction` (`DISALLOW_FACTORY_RESET`/`SAFE_BOOT`/`DEBUGGING_FEATURES`), permissões concedidas via `setPermissionGrantState` (a criança não consegue revogar pelos Ajustes), kiosk/LockTask possível.
+- Tudo que já está desenhado neste doc (Approaches A/B/C, módulos, plano de testes) é especificamente este modo.
+- É o modo sendo validado agora no spike de provisionamento físico.
+
+### Modo B: Celular já em uso — Device Admin (legado) + Accessibility Service (AINDA NÃO DESENHADO EM DETALHE)
+- Instala como app comum, sem provisionamento — o responsável concede permissões manualmente pelos Ajustes (Admin do Dispositivo clássico, Acessibilidade, Acesso de Uso, Notificações).
+- **Controle estrutural mais fraco por natureza da API, não por falta de esforço**: a criança pode revogar a permissão de Acessibilidade ou desinstalar o app a qualquer momento pelos Ajustes normais — não existe equivalente a `addUserRestriction` fora de Device Owner. Nenhum nível de engenharia fecha esse buraco; é uma limitação da plataforma Android para apps não-Device-Owner.
+- Kiosk completo não é possível neste modo (LockTask também depende de Device Owner/Profile Owner).
+- **Pendente de design:** qual Accessibility Service exato substitui cada comando (ex.: captura de tela sem Device Owner ainda passa pelo mesmo diálogo `MediaProjection` do SO — isso não muda; mas localização/notificação persistente precisam de estratégia diferente sem as garantias de Device Owner). Esse desenho técnico fica para uma sessão própria antes de implementar o Modo B — não está coberto pelas Approaches A/B/C nem pelo "Plano de testes" abaixo, que são todos Modo A.
+
+### Detecção do modo (pendente de design)
+No fluxo de pareamento, o app (ou o painel) precisa decidir qual modo oferecer. Hipótese inicial a validar: tentar o provisionamento Device Owner primeiro (só funciona se o aparelho estiver zerado); se não for possível, cair para o fluxo de permissões manuais do Modo B. Isso é uma Open Question nova, não uma decisão fechada.
 
 ## Premises
 1. O schema de dados (`devices`/`device_commands`/`device_telemetry`/`command_consent_events`) já existe, é sólido, e deve ser reusado como está pelo app Android. **Confirmado.**
@@ -166,6 +185,7 @@ COVERAGE: 0/17 — nada implementado ainda; esta lista é o ponto de partida obr
 4. Quem é o dono da conta Firebase/FCM (novo projeto ou integrar a um existente da Assurant)?
 5. Endpoint de revogação/unlink não existe nem no painel web hoje — **decidido: entra neste escopo** (ver Backend item 5, módulo `deviceadmin` e Success Criteria, que já especificam o comportamento completo). Falta apenas construir a tela/ação correspondente no painel web, que hoje não tem nenhum controle de remover/desvincular device.
 6. Como o APK assinado de teste é atualizado em um aparelho que já é Device Owner? Sideload manual exige reinstalar (possivelmente com perda de Device Owner) enquanto a fase "depois" (Play gerenciado/EMM) resolveria isso nativamente — decidir o caminho da fase de testes antes de distribuir a primeira versão.
+7. **Nova (Modo B):** como o app/painel decide, no pareamento, se oferece Modo A (Device Owner) ou Modo B (Device Admin + Accessibility)? E qual o desenho técnico completo do Modo B (quais Accessibility Services substituem cada comando, qual o nível real de garantia de persistência sem Device Owner)? Precisa de uma sessão de design própria antes de implementar — ver seção "Modos de Operação".
 
 ## Success Criteria
 - QR code no setup de fábrica ativa Device Owner automaticamente, sem passo manual, em aparelho sem contas configuradas.
@@ -174,7 +194,7 @@ COVERAGE: 0/17 — nada implementado ainda; esta lista é o ponto de partida obr
 - Comandos (`device_commands`) chegam ao aparelho via push (ou pull de segurança, se o push falhar) e são executados com indicador visível + consentimento registrado em `command_consent_events`.
 - Telemetria capturada offline é enfileirada localmente e sincronizada assim que a conectividade voltar, sem perda de dados.
 - Revogação do vínculo (servidor sinaliza `revoked`) resulta em `clearDeviceOwnerApp()` ou instrução clara de reset de fábrica — não apenas em parar de aceitar chamadas de API.
-- Enquanto o vínculo estiver ativo, a criança não consegue remover o app nem escapar da supervisão pelos caminhos do próprio Android (Ajustes → reset de fábrica, boot em modo seguro, ADB/Opções do Desenvolvedor — `DISALLOW_FACTORY_RESET`/`DISALLOW_SAFE_BOOT`/`DISALLOW_DEBUGGING_FEATURES` aplicados) nem revogando permissões manualmente (`setPermissionGrantState`). **Limitação conhecida e fora do controle do Device Owner:** reset via modo recovery físico (combinação de botões volume+power), que vários fabricantes permitem independente de qualquer política de MDM — não há mitigação de software para isso.
+- **(Modo A apenas)** Enquanto o vínculo estiver ativo, a criança não consegue remover o app nem escapar da supervisão pelos caminhos do próprio Android (Ajustes → reset de fábrica, boot em modo seguro, ADB/Opções do Desenvolvedor — `DISALLOW_FACTORY_RESET`/`DISALLOW_SAFE_BOOT`/`DISALLOW_DEBUGGING_FEATURES` aplicados) nem revogando permissões manualmente (`setPermissionGrantState`). **Limitação conhecida e fora do controle do Device Owner:** reset via modo recovery físico (combinação de botões volume+power), que vários fabricantes permitem independente de qualquer política de MDM — não há mitigação de software para isso. **No Modo B, nenhuma dessas garantias existe** — é uma limitação estrutural da plataforma para apps sem Device Owner, não um gap de implementação a fechar depois.
 - APK assinado instalável em aparelho de teste via QR, fim a fim.
 
 ## Distribution Plan
