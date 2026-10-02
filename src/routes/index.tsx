@@ -123,8 +123,8 @@ function AuthScreen() {
         <Button className="h-11 w-full" type="submit" disabled={busy}>{busy && <LoaderCircle className="animate-spin"/>}{mode === "signup" ? "Criar conta" : mode === "forgot" ? "Enviar link" : "Entrar"}</Button>
       </form>
       <div className="mt-5 flex flex-wrap justify-between gap-3 text-sm">
-        <Button variant="link" className="h-auto p-0" onClick={()=>{setMessage("");setMode(mode === "signup" ? "signin" : "signup")}}>{mode === "signup" ? "Já tenho conta" : "Criar uma conta"}</Button>
-        <Button variant="link" className="h-auto p-0" onClick={()=>{setMessage("");setMode(mode === "forgot" ? "signin" : "forgot")}}>{mode === "forgot" ? "Voltar para entrar" : "Esqueci minha senha"}</Button>
+        <Button variant="ghost" className="h-auto p-0 text-primary" onClick={()=>{setMessage("");setMode(mode === "signup" ? "signin" : "signup")}}>{mode === "signup" ? "Já tenho conta" : "Criar uma conta"}</Button>
+        <Button variant="ghost" className="h-auto p-0 text-primary" onClick={()=>{setMessage("");setMode(mode === "forgot" ? "signin" : "forgot")}}>{mode === "forgot" ? "Voltar para entrar" : "Esqueci minha senha"}</Button>
       </div>
     </div></section>
   </main>;
@@ -151,7 +151,7 @@ function Dashboard({ user }: { user: User }) {
       supabase.from("device_telemetry").select("*").order("created_at", { ascending: false }).limit(30),
     ]);
     if (!profileResult.data) {
-      const displayName = String(user.user_metadata?.display_name ?? user.user_metadata?.full_name ?? "");
+      const displayName = String(user.user_metadata?.["display_name"] ?? user.user_metadata?.["full_name"] ?? "");
       const { data } = await supabase.from("profiles").upsert({ id: user.id, display_name: displayName }).select().single();
       setProfile(data);
     } else setProfile(profileResult.data);
@@ -240,4 +240,4 @@ function MiniStat({label,value}:{label:string;value:string}){return <div classNa
 function ActionButton({type,onClick}:{type:CommandType;onClick:()=>void}){const Icon=commandIcons[type];return <Button variant="secondary" className="h-20 flex-col" onClick={onClick}><Icon size={21}/><span className="text-xs sm:text-sm">{commandLabels[type]}</span></Button>}
 function ChildRow({icon:Icon,title,detail}:{icon:typeof MapPin;title:string;detail:string}){return <div className="flex items-center gap-3 rounded-md border border-border p-3"><div className="grid size-9 place-items-center rounded-md bg-secondary text-secondary-foreground"><Icon size={17}/></div><div><p className="text-sm font-bold">{title}</p><p className="mt-0.5 text-xs text-muted-foreground">{detail}</p></div></div>}
 function formatRelative(value:string){return new Intl.DateTimeFormat("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(value));}
-function locationLabel(item:Telemetry|undefined){if(!item)return "Sem localização";const payload=item.payload_data;if(payload&&typeof payload==="object"&&!Array.isArray(payload)&&"label" in payload&&typeof payload.label==="string")return payload.label;return "Localização recebida";}
+function locationLabel(item:Telemetry|undefined){if(!item)return "Sem localização";const payload=item.payload_data;if(payload&&typeof payload==="object"&&!Array.isArray(payload)&&"label" in payload&&typeof payload["label"]==="string")return payload["label"];return "Localização recebida";}

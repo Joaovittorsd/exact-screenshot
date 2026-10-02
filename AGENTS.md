@@ -10,3 +10,5 @@
 <!-- LOVABLE:END -->
 
 - Keep the prototype privacy-first: remote camera and screen actions must show explicit consent on the monitored device, because covert capture is out of scope.
+- Keep user-owned Ninho data in Lovable Cloud behind row-level ownership policies; use realtime subscriptions only inside mounted effects with cleanup.
+- Keep the web simulator and native Android client on the same command/telemetry contract; sensitive capture commands require auditable device consent.
