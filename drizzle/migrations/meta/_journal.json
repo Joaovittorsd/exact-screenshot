@@ -8,6 +8,13 @@
       "when": 1790954579049,
       "tag": "0000_create_ninho_core",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790954715903,
+      "tag": "0001_secure_device_ownership",
+      "breakpoints": true
     }
   ]
 }
