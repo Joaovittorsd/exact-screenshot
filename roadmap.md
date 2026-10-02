@@ -1,0 +1,9 @@
+# Roadmap
+
+- [x] Enable Lovable Cloud, email/password access, Google access, and private media storage
+- [x] Create secured profiles, devices, commands, telemetry, consent audit, and realtime schema
+- [x] Build account entry, signup, recovery, and protected navigation
+- [x] Connect the parent dashboard to real devices, commands, and telemetry
+- [x] Add device pairing, profile settings, and supervised-device simulator
+- [x] Validate security, database policies, build, and main user flows
+- [ ] Integrate the native Android app when the user uploads its project
