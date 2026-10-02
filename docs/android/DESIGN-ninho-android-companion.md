@@ -33,8 +33,24 @@ O app precisa cobrir dois cenários de aparelho, que exigem APIs Android complet
 - Kiosk completo não é possível neste modo (LockTask também depende de Device Owner/Profile Owner).
 - **Pendente de design:** qual Accessibility Service exato substitui cada comando (ex.: captura de tela sem Device Owner ainda passa pelo mesmo diálogo `MediaProjection` do SO — isso não muda; mas localização/notificação persistente precisam de estratégia diferente sem as garantias de Device Owner). Esse desenho técnico fica para uma sessão própria antes de implementar o Modo B — não está coberto pelas Approaches A/B/C nem pelo "Plano de testes" abaixo, que são todos Modo A.
 
-### Detecção do modo (pendente de design)
-No fluxo de pareamento, o app (ou o painel) precisa decidir qual modo oferecer. Hipótese inicial a validar: tentar o provisionamento Device Owner primeiro (só funciona se o aparelho estiver zerado); se não for possível, cair para o fluxo de permissões manuais do Modo B. Isso é uma Open Question nova, não uma decisão fechada.
+### Detecção do modo (RESOLVIDO)
+Não precisa de heurística: o próprio ponto de entrada do Android já diz qual modo é.
+- App aberto via `onProfileProvisioningComplete()` (callback do `DeviceAdminReceiver` disparado ao fim do provisionamento QR) → **Modo A**. Só existe esse caminho se o provisionamento Device Owner funcionou.
+- App aberto normalmente pelo ícone/launcher após instalação manual (sideload ou Play) → **Modo B** por definição, porque Device Owner só pode ser ativado via provisionamento — uma instalação manual nunca resulta em Device Owner. `dpm.isDeviceOwnerApp(packageName)` serve como confirmação em runtime, mas a decisão de qual onboarding mostrar já é conhecida antes disso, pelo ponto de entrada.
+
+### Modo B — desenho técnico (escopo confirmado: inclui bloqueio de apps)
+
+**Decisão de escopo (2026-10-02):** Modo B inclui bloqueio de apps via Accessibility Service. **Risco de política aceito explicitamente** — isso soma à Revisão legal/compliance já listada em Dependencies: antes de ir para usuário real, validar especificamente o uso de Accessibility Service contra a política atual da Google Play para apps de controle parental (histórico de rejeições/remoções nessa categoria é real, não hipotético).
+
+Componentes novos do Modo B:
+- **`NinhoDeviceAdminReceiver`** (o mesmo componente do Modo A, reusado): ativado via `ACTION_ADD_DEVICE_ADMIN` (o responsável aceita manualmente num diálogo do sistema) em vez de provisionamento. Nesse nível (Device Admin clássico, não Owner), serve principalmente para dificultar desinstalação — o usuário precisa primeiro desativar o admin em Ajustes antes de conseguir desinstalar o app; `onDisableRequested()` pode mostrar um aviso customizado nesse momento.
+- **`NinhoAccessibilityService`** (novo): declarado com `canRetrieveWindowContent` e eventos `TYPE_WINDOW_STATE_CHANGED`, usado só para detectar qual app está em primeiro plano (não para ler conteúdo de tela/teclado — isso cruzaria pra território de keylogging, fora de escopo e provavelmente ilegal).
+- **Overlay de bloqueio** (novo): `TYPE_APPLICATION_OVERLAY` (permissão especial `SYSTEM_ALERT_WINDOW`, concedida manualmente pelo responsável via `ACTION_MANAGE_OVERLAY_PERMISSION`) — desenha uma tela de bloqueio por cima do app restrito quando a Accessibility Service detecta que ele abriu.
+- **Onboarding do Modo B** (variante do módulo `onboarding` do Modo A): precisa guiar o responsável por múltiplas telas de permissão especial, uma de cada vez, cada uma abrindo o Intent do sistema correspondente: `ACTION_ADD_DEVICE_ADMIN`, `ACTION_ACCESSIBILITY_SETTINGS` (ativar manualmente o serviço numa lista — não tem atalho, é assim que a Google exige), `ACTION_MANAGE_OVERLAY_PERMISSION`, mais as permissões runtime normais (câmera/mic/localização/notificações).
+
+**Captura de câmera/mic/tela no Modo B:** usa as mesmas permissões runtime padrão do Android, concedidas normalmente (revogáveis pelo usuário a qualquer momento — diferente do Modo A, que força via `setPermissionGrantState`). Gravação de tela continua idêntica ao Modo A (mesmo diálogo `MediaProjection` do SO, não muda com o modo).
+
+**Modelo de dados novo — bloqueio de apps:** o enum `device_command_type` atual (`get_location`, `capture_photo`, `capture_screenshot`, `record_screen`, `record_audio`, `send_message`, `play_alert`) não cobre "política persistente de apps bloqueados" — isso não é um comando pontual, é um estado contínuo. Precisa de uma tabela nova (ex. `app_restrictions`: `device_id` FK, `package_name`, `restricted` boolean, timestamps), não um novo valor no enum de comandos.
 
 ## Premises
 1. O schema de dados (`devices`/`device_commands`/`device_telemetry`/`command_consent_events`) já existe, é sólido, e deve ser reusado como está pelo app Android. **Confirmado.**
@@ -185,7 +201,8 @@ COVERAGE: 0/17 — nada implementado ainda; esta lista é o ponto de partida obr
 4. Quem é o dono da conta Firebase/FCM (novo projeto ou integrar a um existente da Assurant)?
 5. Endpoint de revogação/unlink não existe nem no painel web hoje — **decidido: entra neste escopo** (ver Backend item 5, módulo `deviceadmin` e Success Criteria, que já especificam o comportamento completo). Falta apenas construir a tela/ação correspondente no painel web, que hoje não tem nenhum controle de remover/desvincular device.
 6. Como o APK assinado de teste é atualizado em um aparelho que já é Device Owner? Sideload manual exige reinstalar (possivelmente com perda de Device Owner) enquanto a fase "depois" (Play gerenciado/EMM) resolveria isso nativamente — decidir o caminho da fase de testes antes de distribuir a primeira versão.
-7. **Nova (Modo B):** como o app/painel decide, no pareamento, se oferece Modo A (Device Owner) ou Modo B (Device Admin + Accessibility)? E qual o desenho técnico completo do Modo B (quais Accessibility Services substituem cada comando, qual o nível real de garantia de persistência sem Device Owner)? Precisa de uma sessão de design própria antes de implementar — ver seção "Modos de Operação".
+7. ~~Como decidir Modo A vs B~~ — **resolvido**, ver "Detecção do modo" na seção "Modos de Operação" (o ponto de entrada do Android já determina o modo, sem heurística).
+8. **Nova:** validar o uso de Accessibility Service para bloqueio de apps contra a política atual da Google Play antes de distribuir pra usuário real — soma à revisão legal/compliance já listada em Dependencies.
 
 ## Success Criteria
 - QR code no setup de fábrica ativa Device Owner automaticamente, sem passo manual, em aparelho sem contas configuradas.
