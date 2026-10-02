@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep the prototype privacy-first: remote camera and screen actions must show explicit consent on the monitored device, because covert capture is out of scope.
